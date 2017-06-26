@@ -1,0 +1,18 @@
+[package]
+name = "fujisaki_ringsig"
+version = "0.0.1"
+authors = ["Michael Rosenberg <42micro@gmail.com>"]
+
+repository = "https://github.com/doomrobo/fujisaki-ringsig"
+
+[dependencies]
+rand = "0.3"
+generic-array = "0.8"
+digest = "0.6"
+blake2 = "0.6"
+
+[dependencies.curve25519-dalek]
+version = "0.9.0"
+features = ["yolocrypto"] # So we can use decaf and its elligator impl
+git = "https://github.com/doomrobo/curve25519-dalek.git"
+branch = "update-deps"
