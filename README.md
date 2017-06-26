@@ -1,5 +1,5 @@
 # fujisaki-ringsig
-[![Version](https://img.shields.io/crates/v/fujisaki_ringsig)](https://crates.io/crates/fujisaki_ringsig)
+[![Version](https://img.shields.io/crates/v/fujisaki_ringsig.svg)](https://crates.io/crates/fujisaki_ringsig)
 [![Docs](https://docs.rs/fujisaki_ringsig/badge.svg)](https://docs.rs/fujisaki_ringsig)
 
 This is an implementation of the [Traceable Ring Signature algorithm by Eiichiro Fujisaki and
