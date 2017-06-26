@@ -30,8 +30,8 @@
 //!     pubkeys: pubkeys,
 //! };
 //!
-//! // Make two signatures. Sign different messages with the same key and the same tag. This is a
-//! // no-no. We will get caught.
+//! // Make two signatures. Sign different messages with the same key and the same tag. This is
+//! // a no-no. We will get caught.
 //! let sig1 = sign(&*msg1, &tag, &my_kp.privkey);
 //! let sig2 = sign(&*msg2, &tag, &my_kp.privkey);
 //!

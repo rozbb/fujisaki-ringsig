@@ -27,7 +27,7 @@ pub enum Trace<'a> {
 /// use fujisaki_ringsig::{sign, trace, KeyPair, Tag, Trace};
 ///
 /// let msg1 = b"cooking MCs like a pound of bacon";
-/// let msg2 = b"rollin' in my 5.0";
+/// let msg2 = msg1;
 /// let issue_number: usize = 54321;
 ///
 /// let kp1 = KeyPair::generate();
@@ -44,7 +44,7 @@ pub enum Trace<'a> {
 /// let sig1 = sign(&*msg1, &tag, &my_kp.privkey);
 /// let sig2 = sign(&*msg2, &tag, &my_kp.privkey);
 ///
-/// assert_eq!(trace(&*msg1, &sig1, &*msg2, &sig2, &tag), Trace::Revealed(&my_kp.pubkey));
+/// assert_eq!(trace(&*msg1, &sig1, &*msg2, &sig2, &tag), Trace::Linked);
 /// # }
 pub fn trace<'a>(msg1: &[u8], sig1: &Signature, msg2: &[u8], sig2: &Signature, tag: &'a Tag)
         -> Trace<'a> {
