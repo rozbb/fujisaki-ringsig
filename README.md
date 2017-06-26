@@ -4,5 +4,14 @@ This is an implementation of the [Traceable Ring Signature algorithm by Eiichiro
 Koutarou Suzuki](https://eprint.iacr.org/2006/389.pdf). This crate uses the `curve25519-dalek`
 library. In particular it uses the experimental `decaf` module for its elligator implementation.
 
+## License
+
+Licensed under either of
+
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE))
+ * MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
+
 ## Warning
 This crate should not be used in any serious contexts. It is not secure.
