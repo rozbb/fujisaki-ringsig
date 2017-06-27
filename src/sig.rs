@@ -26,7 +26,7 @@ pub struct Signature {
 #[derive(Debug, Eq, PartialEq)]
 pub struct Tag {
     pub pubkeys: Vec<PublicKey>,
-    pub issue: usize,
+    pub issue: u64,
 }
 
 impl Tag {
@@ -84,7 +84,7 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
 /// use fujisaki_ringsig::{sign, verify, KeyPair, Tag};
 ///
 /// let msg = b"ready for the chumps on the wall";
-/// let issue_number: usize = 12345;
+/// let issue_number: u64 = 12345;
 ///
 /// let kp1 = KeyPair::generate();
 /// let kp2 = KeyPair::generate();
@@ -286,7 +286,7 @@ mod test {
     // Make sure that every signature verifies, and changing the msg makes verification fail
     #[test]
     fn test_sig_correctness() {
-        let Context { msg, tag, mut keypairs } = setup();
+        let Context { msg, tag, mut keypairs } = setup(1);
         // Pick one privkey to sign with
         let privkey = {
             let mut rng = rand::thread_rng();
@@ -304,7 +304,7 @@ mod test {
     // Make sure doing the same signature twice doesn't result in the same output
     #[test]
     fn test_sig_nondeterminism() {
-        let Context { msg, tag, mut keypairs } = setup();
+        let Context { msg, tag, mut keypairs } = setup(1);
 
         // Pick just one privkey to sign with
         let privkey = {

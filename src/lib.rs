@@ -13,7 +13,7 @@
 //!
 //! let msg1 = b"now that the party is jumping";
 //! let msg2 = b"magnetized by the mic while I kick my juice";
-//! let issue_number: usize = 12345;
+//! let issue_number: u64 = 12345;
 //!
 //! // Make some keypairs for our ring
 //! let kp1 = KeyPair::generate();

@@ -28,7 +28,7 @@ pub enum Trace<'a> {
 ///
 /// let msg1 = b"cooking MCs like a pound of bacon";
 /// let msg2 = msg1;
-/// let issue_number: usize = 54321;
+/// let issue_number: u64 = 54321;
 ///
 /// let kp1 = KeyPair::generate();
 /// let kp2 = KeyPair::generate();
@@ -73,7 +73,8 @@ mod test {
     #[test]
     fn test_trace_indep() {
         let mut rng = rand::thread_rng();
-        let Context { msg, tag, mut keypairs } = setup();
+        // Need a context with at least 2 keypairs in it
+        let Context { msg, tag, mut keypairs } = setup(2);
 
         // Pick two distinct privkeys to sign with
         let privkey1 = {
@@ -93,7 +94,9 @@ mod test {
 
     #[test]
     fn test_trace_linked() {
-        let Context { msg, tag, mut keypairs } = setup();
+        // Need a context with at least 2 keypairs in it, otherwise there is only on possible
+        // signer, and the result of a trace is Revealed instead of Linked
+        let Context { msg, tag, mut keypairs } = setup(2);
 
         // Pick just one privkey to sign with
         let privkey = {
@@ -113,11 +116,11 @@ mod test {
     fn test_trace_revealed() {
         // Get two messages to sign
         let (msg1, tag, mut keypairs) = {
-            let ctx = setup();
+            let ctx = setup(1);
             (ctx.msg, ctx.tag, ctx.keypairs)
         };
         let msg2 = {
-            let ctx = setup();
+            let ctx = setup(1);
             ctx.msg
         };
 
