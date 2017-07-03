@@ -22,27 +22,41 @@ pub struct Signature {
 }
 
 /// Denotes the ring of public keys which are being used for the ring signature, as well as the
-/// "issue" number, corresponding to what issue the signature corresponds to (e.g election ID)
-#[derive(Debug, Eq, PartialEq)]
+/// "issue", corresponding to what issue the signature corresponds to (e.g `b"auction number 15"`)
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Tag {
     pub pubkeys: Vec<PublicKey>,
-    pub issue: u64,
+    pub issue: Vec<u8>,
 }
 
 impl Tag {
+    // Given an initialized hash function, input the pubkeys and issue number
+    fn hash_self<T: Digest>(&self, mut h: T) -> T {
+        for pubkey in &self.pubkeys {
+            let pubkey_c = pubkey.0.compress();
+            h.input(pubkey_c.as_bytes());
+        }
+        h.input(&*self.issue);
+
+        h
+    }
+
     // Independent elements from a family of hashes. The first two are for hashing onto the curve.
     // The last one is for hashing to a scalar. Accordingly, the first two use digests with 256-bit
     // output and the last uses a digest with 512-bit output.
     fn hash0(&self) -> Blake2s {
-        Blake2s::new_keyed(KEY0)
+        let h = Blake2s::new_keyed(KEY0);
+        self.hash_self(h)
     }
 
     fn hash1(&self) -> Blake2s {
-        Blake2s::new_keyed(KEY1)
+        let h = Blake2s::new_keyed(KEY1);
+        self.hash_self(h)
     }
 
     fn hash2(&self) -> Blake2b {
-        Blake2b::new_keyed(KEY2)
+        let h = Blake2b::new_keyed(KEY2);
+        self.hash_self(h)
     }
 }
 
@@ -84,7 +98,7 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
 /// use fujisaki_ringsig::{sign, verify, KeyPair, Tag};
 ///
 /// let msg = b"ready for the chumps on the wall";
-/// let issue_number: u64 = 12345;
+/// let issue = b"testcase 12346".to_vec();
 ///
 /// let kp1 = KeyPair::generate();
 /// let kp2 = KeyPair::generate();
@@ -93,8 +107,8 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
 /// let my_privkey = kp1.privkey;
 /// let pubkeys = vec![kp1.pubkey, kp2.pubkey, kp3.pubkey];
 /// let tag = Tag {
-///     issue: issue_number,
-///     pubkeys: pubkeys,
+///     issue,
+///     pubkeys,
 /// };
 ///
 /// let sig = sign(&*msg, &tag, &my_privkey);
@@ -124,7 +138,7 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
         DecafPoint::from_hash(d)
     };
 
-    // A₁ := i^(-1) * (σⱼ - A₀)
+    // A₁ := (j+1)^{-1} * (σⱼ - A₀)
     let aa1 = {
         let t = &sigma[privkey_idx] - &aa0;
         // sigma is indexed by zero but the paper assumes it is indexed at 1. We can keep it
@@ -194,7 +208,7 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
         Scalar::from_hash(d)
     };
 
-    // cⱼ := c - \sum_{i ‡ j} cᵢ
+    // cⱼ := c - Σ_{i ≠ j} cᵢ
     c[privkey_idx] = {
         let sum = c.iter()
                    .enumerate()
@@ -279,43 +293,70 @@ pub fn verify(msg: &[u8], tag: &Tag, sig: &Signature) -> bool {
 
 #[cfg(test)]
 mod test {
+    use key::KeyPair;
     use super::{sign, verify};
-    use test::{setup, Context};
+    use test_utils::{remove_privkey, setup, Context};
+
     use rand::{self, Rng};
 
-    // Make sure that every signature verifies, and changing the msg makes verification fail
+    // Make sure that every signature verifies
     #[test]
     fn test_sig_correctness() {
         let Context { msg, tag, mut keypairs } = setup(1);
-        // Pick one privkey to sign with
-        let privkey = {
-            let mut rng = rand::thread_rng();
-            let privkey_idx = rng.gen_range(0, keypairs.len());
-            keypairs.remove(privkey_idx).privkey
-        };
+        let privkey = remove_privkey(&mut keypairs);
 
         let sig = sign(&msg, &tag, &privkey);
         assert!(verify(&msg, &tag, &sig));
-
-        let bad_msg = b"yellow submarine";
-        assert!(!verify(&*bad_msg, &tag, &sig));
     }
 
     // Make sure doing the same signature twice doesn't result in the same output
     #[test]
     fn test_sig_nondeterminism() {
         let Context { msg, tag, mut keypairs } = setup(1);
-
-        // Pick just one privkey to sign with
-        let privkey = {
-            let mut rng = rand::thread_rng();
-            let privkey_idx = rng.gen_range(0, keypairs.len());
-            keypairs.remove(privkey_idx).privkey
-        };
+        let privkey = remove_privkey(&mut keypairs);
 
         let sig1 = sign(&msg, &tag, &privkey);
         let sig2 = sign(&msg, &tag, &privkey);
 
         assert!(sig1 != sig2);
+    }
+
+    // Make sure that changing the message results in an invalid sig
+    #[test]
+    fn test_sig_msg_linkage() {
+        let mut rng = rand::thread_rng();
+        let Context { msg, tag, mut keypairs } = setup(1);
+        let privkey = remove_privkey(&mut keypairs);
+        let sig = sign(&msg, &tag, &privkey);
+
+        // Check that changing a byte of the message invalidates the signature
+        let mut bad_msg = msg.clone();
+        let byte_idx = rng.gen_range(0, msg.len());
+        // Flip the bits of one byte of the message;
+        bad_msg[byte_idx] = !bad_msg[byte_idx];
+        assert!(!verify(&*bad_msg, &tag, &sig));
+    }
+
+    // Make sure that changing the tag results in an invalid sig
+    #[test]
+    fn test_sig_tag_linkage() {
+        let mut rng = rand::thread_rng();
+        let Context { msg, tag, mut keypairs } = setup(1);
+        let privkey = remove_privkey(&mut keypairs);
+        let sig = sign(&msg, &tag, &privkey);
+
+        // Check that changing a pubkey in the tag invalidates the signature
+        let mut bad_tag = tag.clone();
+        let new_pubkey = KeyPair::generate().pubkey;
+        let pubkey_idx = rng.gen_range(0, tag.pubkeys.len());
+        bad_tag.pubkeys[pubkey_idx] = new_pubkey;
+        assert!(!verify(&msg, &bad_tag, &sig));
+
+        // Check that changing the issue invalidates the signature
+        let mut bad_tag = tag.clone();
+        let byte_idx = rng.gen_range(0, tag.issue.len());
+        // Flip the bits of one byte of the issue string
+        bad_tag.issue[byte_idx] = !bad_tag.issue[byte_idx];
+        assert!(!verify(&msg, &bad_tag, &sig));
     }
 }

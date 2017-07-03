@@ -13,7 +13,7 @@
 //!
 //! let msg1 = b"now that the party is jumping";
 //! let msg2 = b"magnetized by the mic while I kick my juice";
-//! let issue_number: u64 = 12345;
+//! let issue = b"testcase 12345".to_vec();
 //!
 //! // Make some keypairs for our ring
 //! let kp1 = KeyPair::generate();
@@ -26,8 +26,8 @@
 //!
 //! // Make the tag corresponding to this issue and ring
 //! let tag = Tag {
-//!     issue: issue_number,
-//!     pubkeys: pubkeys,
+//!     issue,
+//!     pubkeys,
 //! };
 //!
 //! // Make two signatures. Sign different messages with the same key and the same tag. This is
@@ -61,4 +61,4 @@ pub use sig::*;
 pub use trace::*;
 
 #[cfg(test)]
-mod test;
+mod test_utils;

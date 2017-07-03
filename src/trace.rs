@@ -28,7 +28,7 @@ pub enum Trace<'a> {
 ///
 /// let msg1 = b"cooking MCs like a pound of bacon";
 /// let msg2 = msg1;
-/// let issue_number: u64 = 54321;
+/// let issue = b"testcase 54321".to_vec();
 ///
 /// let kp1 = KeyPair::generate();
 /// let kp2 = KeyPair::generate();
@@ -37,8 +37,8 @@ pub enum Trace<'a> {
 /// let my_kp = kp1;
 /// let pubkeys = vec![my_kp.pubkey.clone(), kp2.pubkey, kp3.pubkey];
 /// let tag = Tag {
-///     issue: issue_number,
-///     pubkeys: pubkeys,
+///     issue,
+///     pubkeys,
 /// };
 ///
 /// let sig1 = sign(&*msg1, &tag, &my_kp.privkey);
@@ -66,7 +66,7 @@ pub fn trace<'a>(msg1: &[u8], sig1: &Signature, msg2: &[u8], sig2: &Signature, t
 #[cfg(test)]
 mod test {
     use super::{trace, Trace};
-    use test::{setup, Context};
+    use test_utils::{setup, Context};
     use sig::sign;
     use rand::{self, Rng};
 
@@ -94,7 +94,7 @@ mod test {
 
     #[test]
     fn test_trace_linked() {
-        // Need a context with at least 2 keypairs in it, otherwise there is only on possible
+        // Need a context with at least 2 keypairs in it, otherwise there is only one possible
         // signer, and the result of a trace is Revealed instead of Linked
         let Context { msg, tag, mut keypairs } = setup(2);
 
