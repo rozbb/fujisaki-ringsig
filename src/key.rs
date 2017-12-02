@@ -1,11 +1,11 @@
-use curve25519_dalek::constants::DECAF_ED25519_BASEPOINT;
-use curve25519_dalek::decaf::{CompressedDecaf, DecafPoint};
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use rand::OsRng;
 
 /// A public key
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PublicKey(pub(crate) DecafPoint);
+pub struct PublicKey(pub(crate) RistrettoPoint);
 
 impl PublicKey {
     /// Serialize this public key to 32 bytes
@@ -22,14 +22,14 @@ impl PublicKey {
         }
         let mut arr = [0u8; 32];
         arr.copy_from_slice(bytes);
-        let c = CompressedDecaf(arr);
+        let c = CompressedRistretto(arr);
         c.decompress().map(|p| PublicKey(p))
     }
 }
 
 /// A private key
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PrivateKey(pub(crate) Scalar, pub(crate) DecafPoint);
+pub struct PrivateKey(pub(crate) Scalar, pub(crate) RistrettoPoint);
 
 impl PrivateKey {
     /// Serialize this private key to 64 bytes
@@ -59,7 +59,7 @@ impl PrivateKey {
         let pubkey_point = {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(pubkey_point_bytes);
-            let c = CompressedDecaf(arr);
+            let c = CompressedRistretto(arr);
             c.decompress()
         };
 
@@ -79,7 +79,7 @@ impl KeyPair {
     pub fn generate() -> KeyPair {
         let mut csprng = OsRng::new().expect("Could not instantiate CSPRNG");
         let s = Scalar::random(&mut csprng);
-        let pubkey = PublicKey(&s * &DECAF_ED25519_BASEPOINT);
+        let pubkey = PublicKey(&s * &RISTRETTO_BASEPOINT_POINT);
         let privkey = PrivateKey(s, pubkey.0.clone());
 
         KeyPair { pubkey, privkey }

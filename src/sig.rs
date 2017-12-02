@@ -1,9 +1,9 @@
 use key::{PrivateKey, PublicKey};
 
 use blake2::{Blake2b, Blake2s};
-use curve25519_dalek::curve::Identity;
-use curve25519_dalek::constants::DECAF_ED25519_BASEPOINT;
-use curve25519_dalek::decaf::DecafPoint;
+use curve25519_dalek::edwards::Identity;
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use digest::Digest;
 use rand::OsRng;
@@ -16,7 +16,7 @@ static KEY2: &'static [u8] = b"rustfujisakisuzukihash2";
 /// keys in the ring.
 #[derive(Debug, Eq, PartialEq)]
 pub struct Signature {
-    aa1: DecafPoint,
+    aa1: RistrettoPoint,
     cs: Vec<Scalar>,
     zs: Vec<Scalar>,
 }
@@ -63,7 +63,7 @@ impl Tag {
 // This routine is common to the verification and trace functions. It returns A₀ and the sigma
 // values
 pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
-        -> (DecafPoint, Vec<DecafPoint>) {
+        -> (RistrettoPoint, Vec<RistrettoPoint>) {
     let ring_size = tag.pubkeys.len();
     let aa1 = sig.aa1;
 
@@ -71,11 +71,11 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
     let aa0 = {
         let mut d = tag.hash1();
         d.input(msg);
-        DecafPoint::from_hash(d)
+        RistrettoPoint::from_hash(d)
     };
 
     // σᵢ := A₀ * A₁ⁱ. See note in the sign function about the i+1 here
-    let sigma: Vec<DecafPoint> = {
+    let sigma: Vec<RistrettoPoint> = {
         let mut vals = Vec::new();
         for i in 0..ring_size {
             let s = Scalar::from_u64((i+1) as u64);
@@ -127,15 +127,15 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
     let privkey_idx = privkey_idx.expect("Could not find private key position in ring");
 
     // h := H(L)
-    let h = DecafPoint::from_hash(tag.hash0());
-    let mut sigma: Vec<DecafPoint> = vec![DecafPoint::identity(); ring_size];
+    let h = RistrettoPoint::from_hash(tag.hash0());
+    let mut sigma: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
     sigma[privkey_idx] = &privkey.0 * &h;
 
     // A₀ := H'(L, m)
     let aa0 = {
         let mut d = tag.hash1();
         d.input(msg);
-        DecafPoint::from_hash(d)
+        RistrettoPoint::from_hash(d)
     };
 
     // A₁ := (j+1)^{-1} * (σⱼ - A₀)
@@ -161,14 +161,14 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
     let mut z: Vec<Scalar> = vec![Scalar::zero(); ring_size];
 
     // Temp values
-    let mut a: Vec<DecafPoint> = vec![DecafPoint::identity(); ring_size];
-    let mut b: Vec<DecafPoint> = vec![DecafPoint::identity(); ring_size];
+    let mut a: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
+    let mut b: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
 
     let mut csprng = OsRng::new().expect("Could not instantiate CSPRNG");
     let w = Scalar::random(&mut csprng);
 
     // aⱼ := wⱼG,  bⱼ := wⱼh
-    a[privkey_idx] = &w * &DECAF_ED25519_BASEPOINT;
+    a[privkey_idx] = &w * &RISTRETTO_BASEPOINT_POINT;
     b[privkey_idx] = &w * &h;
 
     for i in (0..ring_size).filter(|&j| j != privkey_idx) {
@@ -177,7 +177,7 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
 
         // aᵢ := zᵢG * cᵢyᵢ,  bᵢ := zᵢh + cᵢσᵢ
         a[i] = {
-            let gzi = &z[i] * &DECAF_ED25519_BASEPOINT;
+            let gzi = &z[i] * &RISTRETTO_BASEPOINT_POINT;
             let yici = &c[i] * &tag.pubkeys[i].0;
             &gzi + &yici
         };
@@ -237,15 +237,15 @@ pub fn verify(msg: &[u8], tag: &Tag, sig: &Signature) -> bool {
     let aa1 = sig.aa1; // A₁
 
     // h := H(L)
-    let h = DecafPoint::from_hash(tag.hash0());
+    let h = RistrettoPoint::from_hash(tag.hash0());
 
     let (aa0, sigma) = compute_sigma(msg, tag, sig);
 
     // aᵢ := zᵢG * cᵢyᵢ
-    let a: Vec<DecafPoint> = {
+    let a: Vec<RistrettoPoint> = {
         let mut vals = Vec::new();
         for (zi, (pubi, ci)) in z.iter().zip(tag.pubkeys.iter().zip(c.iter())) {
-            let gzi = zi * &DECAF_ED25519_BASEPOINT;
+            let gzi = zi * &RISTRETTO_BASEPOINT_POINT;
             let yici = ci * &pubi.0;
             vals.push(&gzi + &yici);
         }
@@ -254,7 +254,7 @@ pub fn verify(msg: &[u8], tag: &Tag, sig: &Signature) -> bool {
     };
 
     // bᵢ := zᵢh + cᵢσᵢ
-    let b: Vec<DecafPoint> = {
+    let b: Vec<RistrettoPoint> = {
         let mut vals = Vec::new();
         for (zi, (sigmai, ci)) in z.iter().zip(sigma.iter().zip(c.iter())) {
             let hzi = zi * &h;

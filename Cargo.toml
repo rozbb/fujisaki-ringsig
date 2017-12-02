@@ -1,20 +1,17 @@
 [package]
 name = "fujisaki_ringsig"
-version = "0.0.2"
-authors = ["Michael Rosenberg <42micro@gmail.com>"]
+version = "0.0.3"
+authors = ["Michael Rosenberg <micro@fastmail.com>"]
 license = "MIT OR Apache-2.0"
 
 description = "Fujisaki-Suzuki Ring Signatures in Rust"
 keywords = ["ring", "signature", "crypto", "cryptography"]
 repository = "https://github.com/doomrobo/fujisaki-ringsig"
-documentation = "https://docs.rs/fujisaki_ringsig/0.0.1/fujisaki_ringsig/"
+documentation = "https://docs.rs/fujisaki_ringsig"
 
 [dependencies]
-rand = "0.3"
-generic-array = "0.8"
-digest = "0.6"
 blake2 = "0.6"
-
-[dependencies.curve25519-dalek]
-version = "0.9"
-features = ["yolocrypto"] # So we can use decaf and its elligator impl
+curve25519-dalek = "0.13"
+digest = "0.6"
+generic-array = "0.9"
+rand = "0.3"
