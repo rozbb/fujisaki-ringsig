@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 
 description = "Fujisaki-Suzuki Ring Signatures in Rust"
 keywords = ["ring", "signature", "crypto", "cryptography"]
-repository = "https://github.com/doomrobo/fujisaki-ringsig"
+repository = "https://github.com/rozbb/fujisaki-ringsig"
 documentation = "https://docs.rs/fujisaki_ringsig"
 
 [dependencies]
