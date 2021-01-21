@@ -78,11 +78,11 @@ mod test {
 
         // Pick two distinct privkeys to sign with
         let privkey1 = {
-            let privkey_idx = rng.gen_range(0, keypairs.len());
+            let privkey_idx = rng.gen_range(0..keypairs.len());
             keypairs.remove(privkey_idx).privkey
         };
         let privkey2 = {
-            let privkey_idx = rng.gen_range(0, keypairs.len());
+            let privkey_idx = rng.gen_range(0..keypairs.len());
             keypairs.remove(privkey_idx).privkey
         };
 
@@ -101,7 +101,7 @@ mod test {
         // Pick just one privkey to sign with
         let privkey = {
             let mut rng = rand::thread_rng();
-            let privkey_idx = rng.gen_range(0, keypairs.len());
+            let privkey_idx = rng.gen_range(0..keypairs.len());
             keypairs.remove(privkey_idx).privkey
         };
 
@@ -127,7 +127,7 @@ mod test {
         // Pick just one privkey to sign with
         let kp = {
             let mut rng = rand::thread_rng();
-            let privkey_idx = rng.gen_range(0, keypairs.len());
+            let privkey_idx = rng.gen_range(0..keypairs.len());
             keypairs.remove(privkey_idx)
         };
 

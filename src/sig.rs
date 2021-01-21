@@ -1,12 +1,11 @@
 use key::{PrivateKey, PublicKey};
 
-use blake2::{Blake2b, Blake2s};
-use curve25519_dalek::edwards::Identity;
+use blake2::{Blake2b};
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use digest::Digest;
-use rand::OsRng;
+use rand_core::OsRng;
 
 static KEY0: &'static [u8] = b"rustfujisakisuzukihash0";
 static KEY1: &'static [u8] = b"rustfujisakisuzukihash1";
@@ -34,9 +33,9 @@ impl Tag {
     fn hash_self<T: Digest>(&self, mut h: T) -> T {
         for pubkey in &self.pubkeys {
             let pubkey_c = pubkey.0.compress();
-            h.input(pubkey_c.as_bytes());
+            h.update(pubkey_c.as_bytes());
         }
-        h.input(&*self.issue);
+        h.update(&*self.issue);
 
         h
     }
@@ -44,18 +43,18 @@ impl Tag {
     // Independent elements from a family of hashes. The first two are for hashing onto the curve.
     // The last one is for hashing to a scalar. Accordingly, the first two use digests with 256-bit
     // output and the last uses a digest with 512-bit output.
-    fn hash0(&self) -> Blake2s {
-        let h = Blake2s::new_keyed(KEY0);
+    fn hash0(&self) -> Blake2b {
+        let h = Blake2b::with_params(KEY0, &[], &[]);
         self.hash_self(h)
     }
 
-    fn hash1(&self) -> Blake2s {
-        let h = Blake2s::new_keyed(KEY1);
+    fn hash1(&self) -> Blake2b {
+        let h = Blake2b::with_params(KEY1, &[], &[]);
         self.hash_self(h)
     }
 
     fn hash2(&self) -> Blake2b {
-        let h = Blake2b::new_keyed(KEY2);
+        let h = Blake2b::with_params(KEY2, &[], &[]);
         self.hash_self(h)
     }
 }
@@ -70,7 +69,7 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
     // A₀ := H'(L, m)
     let aa0 = {
         let mut d = tag.hash1();
-        d.input(msg);
+        d.update(msg);
         RistrettoPoint::from_hash(d)
     };
 
@@ -78,7 +77,7 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
     let sigma: Vec<RistrettoPoint> = {
         let mut vals = Vec::new();
         for i in 0..ring_size {
-            let s = Scalar::from_u64((i+1) as u64);
+            let s = Scalar::from((i+1) as u64);
             let aa1i = &s * &aa1;
             vals.push(&aa0 + &aa1i);
         }
@@ -128,13 +127,13 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
 
     // h := H(L)
     let h = RistrettoPoint::from_hash(tag.hash0());
-    let mut sigma: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
+    let mut sigma: Vec<RistrettoPoint> = vec![RistrettoPoint::default(); ring_size];
     sigma[privkey_idx] = &privkey.0 * &h;
 
     // A₀ := H'(L, m)
     let aa0 = {
         let mut d = tag.hash1();
-        d.input(msg);
+        d.update(msg);
         RistrettoPoint::from_hash(d)
     };
 
@@ -144,14 +143,14 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
         // sigma is indexed by zero but the paper assumes it is indexed at 1. We can keep it
         // indexed at zero, but we have to calculate 1/(i+1) instead of 1/i, otherwise we might
         // divide by 0
-        let s = Scalar::from_u64((privkey_idx+1) as u64);
+        let s = Scalar::from((privkey_idx+1) as u64);
         let sinv = s.invert();
         &sinv * &t
     };
 
     // σᵢ := A₀ * A₁^{i+1}. Same reasoning for the +1 applies here.
     for i in (0..ring_size).filter(|&j| j != privkey_idx) {
-        let s = Scalar::from_u64((i+1) as u64);
+        let s = Scalar::from((i+1) as u64);
         let aa1i = &s * &aa1;
         sigma[i] = &aa0 + &aa1i;
     }
@@ -161,10 +160,10 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
     let mut z: Vec<Scalar> = vec![Scalar::zero(); ring_size];
 
     // Temp values
-    let mut a: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
-    let mut b: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
+    let mut a: Vec<RistrettoPoint> = vec![RistrettoPoint::default(); ring_size];
+    let mut b: Vec<RistrettoPoint> = vec![RistrettoPoint::default(); ring_size];
 
-    let mut csprng = OsRng::new().expect("Could not instantiate CSPRNG");
+    let mut csprng = OsRng;
     let w = Scalar::random(&mut csprng);
 
     // aⱼ := wⱼG,  bⱼ := wⱼh
@@ -193,16 +192,16 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
         let mut d = tag.hash2();
         let aa0c = aa0.compress();
         let aa1c = aa1.compress();
-        d.input(aa0c.as_bytes());
-        d.input(aa1c.as_bytes());
+        d.update(aa0c.as_bytes());
+        d.update(aa1c.as_bytes());
 
         for ai in a.iter() {
             let aic = ai.compress();
-            d.input(aic.as_bytes());
+            d.update(aic.as_bytes());
         }
         for bi in b.iter() {
             let bic = bi.compress();
-            d.input(bic.as_bytes());
+            d.update(bic.as_bytes());
         }
 
         Scalar::from_hash(d)
@@ -213,7 +212,7 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
         let sum = c.iter()
                    .enumerate()
                    .filter(|&(i, _)| i != privkey_idx)
-                   .fold(Scalar::zero(), |acc, (_, v)| &acc + &v);
+                   .fold(Scalar::zero(), |acc, (_, v)| &acc + v);
         &cc - &sum
     };
 
@@ -270,22 +269,22 @@ pub fn verify(msg: &[u8], tag: &Tag, sig: &Signature) -> bool {
         let mut d = tag.hash2();
         let aa0c = aa0.compress();
         let aa1c = aa1.compress();
-        d.input(aa0c.as_bytes());
-        d.input(aa1c.as_bytes());
+        d.update(aa0c.as_bytes());
+        d.update(aa1c.as_bytes());
 
         for ai in a.iter() {
             let aic = ai.compress();
-            d.input(aic.as_bytes());
+            d.update(aic.as_bytes());
         }
         for bi in b.iter() {
             let bic = bi.compress();
-            d.input(bic.as_bytes());
+            d.update(bic.as_bytes());
         }
 
         Scalar::from_hash(d)
     };
 
-    let sum = c.iter().fold(Scalar::zero(), |acc, v| &acc + &v);
+    let sum = c.iter().fold(Scalar::zero(), |acc, v| &acc + v);
 
     // c == Σcᵢ
     sum == cc
@@ -331,7 +330,7 @@ mod test {
 
         // Check that changing a byte of the message invalidates the signature
         let mut bad_msg = msg.clone();
-        let byte_idx = rng.gen_range(0, msg.len());
+        let byte_idx = rng.gen_range(0..msg.len());
         // Flip the bits of one byte of the message;
         bad_msg[byte_idx] = !bad_msg[byte_idx];
         assert!(!verify(&*bad_msg, &tag, &sig));
@@ -348,13 +347,13 @@ mod test {
         // Check that changing a pubkey in the tag invalidates the signature
         let mut bad_tag = tag.clone();
         let new_pubkey = KeyPair::generate().pubkey;
-        let pubkey_idx = rng.gen_range(0, tag.pubkeys.len());
+        let pubkey_idx = rng.gen_range(0..tag.pubkeys.len());
         bad_tag.pubkeys[pubkey_idx] = new_pubkey;
         assert!(!verify(&msg, &bad_tag, &sig));
 
         // Check that changing the issue invalidates the signature
         let mut bad_tag = tag.clone();
-        let byte_idx = rng.gen_range(0, tag.issue.len());
+        let byte_idx = rng.gen_range(0..tag.issue.len());
         // Flip the bits of one byte of the issue string
         bad_tag.issue[byte_idx] = !bad_tag.issue[byte_idx];
         assert!(!verify(&msg, &bad_tag, &sig));

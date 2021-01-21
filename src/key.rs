@@ -1,7 +1,7 @@
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
-use rand::OsRng;
+use rand_core::OsRng;
 
 /// A public key
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,7 +54,7 @@ impl PrivateKey {
         let scalar = {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(scalar_bytes);
-            Scalar(arr)
+            Scalar::from_bits(arr)
         };
         let pubkey_point = {
             let mut arr = [0u8; 32];
@@ -77,7 +77,7 @@ pub struct KeyPair {
 impl KeyPair {
     /// Generate a secure random keypair
     pub fn generate() -> KeyPair {
-        let mut csprng = OsRng::new().expect("Could not instantiate CSPRNG");
+        let mut csprng = OsRng;
         let s = Scalar::random(&mut csprng);
         let pubkey = PublicKey(&s * &RISTRETTO_BASEPOINT_POINT);
         let privkey = PrivateKey(s, pubkey.0.clone());
