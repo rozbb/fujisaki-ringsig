@@ -1,22 +1,29 @@
-name: Rust
-
+name: CI
 on:
-  push:
-    branches: [ master ]
+  # Run CI on new pushes to the repo or any pull requests.
+  # If only the README file changed, ignore.
   pull_request:
-    branches: [ master ]
+    paths-ignore:
+      - README.md
+  push:
+    branches: master
+    paths-ignore:
+      - README.md
+  # Run CI at least once a month no matter what
+  schedule:
+    - cron: '0 1 1 */1 *'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  test:
 
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
     - name: Run tests with no std
-      run: cargo test --no-default-features --verbose
+      run: cargo test --no-default-features
     - name: Run tests with std
-      run: cargo test --all-features --verbose
+      run: cargo test --all-features
