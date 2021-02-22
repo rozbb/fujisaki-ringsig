@@ -1,16 +1,20 @@
-use key::{PrivateKey, PublicKey};
+use crate::{
+    key::{PrivateKey, PublicKey},
+    prelude::*,
+};
 
-use blake2::{Blake2b, Blake2s};
-use curve25519_dalek::edwards::Identity;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
-use digest::Digest;
-use rand::OsRng;
+use core::convert::TryFrom;
 
-static KEY0: &'static [u8] = b"rustfujisakisuzukihash0";
-static KEY1: &'static [u8] = b"rustfujisakisuzukihash1";
-static KEY2: &'static [u8] = b"rustfujisakisuzukihash2";
+use blake2::{digest::Update, Blake2b};
+use curve25519_dalek::{
+    constants::RISTRETTO_BASEPOINT_POINT, ristretto::RistrettoPoint, scalar::Scalar,
+    traits::Identity,
+};
+use rand_core::{CryptoRng, RngCore};
+
+static DOMAIN_STR0: &'static [u8] = b"rust-ringsig-0";
+static DOMAIN_STR1: &'static [u8] = b"rust-ringsig-1";
+static DOMAIN_STR2: &'static [u8] = b"rust-ringsig-2";
 
 /// A Fujisaki signature. The size of `Signature` scales proportionally with the number of public
 /// keys in the ring.
@@ -23,6 +27,8 @@ pub struct Signature {
 
 /// Denotes the ring of public keys which are being used for the ring signature, as well as the
 /// "issue", corresponding to what issue the signature corresponds to (e.g `b"auction number 15"`)
+///
+/// NOTE: The number of pubkeys MUST be less than 2^64
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Tag {
     pub pubkeys: Vec<PublicKey>,
@@ -31,46 +37,53 @@ pub struct Tag {
 
 impl Tag {
     // Given an initialized hash function, input the pubkeys and issue number
-    fn hash_self<T: Digest>(&self, mut h: T) -> T {
+    fn hash_self<T: Update>(&self, mut h: T) -> T {
         for pubkey in &self.pubkeys {
             let pubkey_c = pubkey.0.compress();
-            h.input(pubkey_c.as_bytes());
+            h.update(pubkey_c.as_bytes());
         }
-        h.input(&*self.issue);
+        h.update(&*self.issue);
 
         h
     }
 
-    // Independent elements from a family of hashes. The first two are for hashing onto the curve.
-    // The last one is for hashing to a scalar. Accordingly, the first two use digests with 256-bit
-    // output and the last uses a digest with 512-bit output.
-    fn hash0(&self) -> Blake2s {
-        let h = Blake2s::new_keyed(KEY0);
+    // 3 independent hash functions
+
+    fn hash0(&self) -> Blake2b {
+        let h = Blake2b::with_params(b"", b"", DOMAIN_STR0);
         self.hash_self(h)
     }
 
-    fn hash1(&self) -> Blake2s {
-        let h = Blake2s::new_keyed(KEY1);
+    fn hash1(&self) -> Blake2b {
+        let h = Blake2b::with_params(b"", b"", DOMAIN_STR1);
         self.hash_self(h)
     }
 
     fn hash2(&self) -> Blake2b {
-        let h = Blake2b::new_keyed(KEY2);
+        let h = Blake2b::with_params(b"", b"", DOMAIN_STR2);
         self.hash_self(h)
     }
 }
 
 // This routine is common to the verification and trace functions. It returns A₀ and the sigma
 // values
-pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
-        -> (RistrettoPoint, Vec<RistrettoPoint>) {
+pub(crate) fn compute_sigma(
+    msg: &[u8],
+    tag: &Tag,
+    sig: &Signature,
+) -> (RistrettoPoint, Vec<RistrettoPoint>) {
+    // Make sure the ring size isn't bigger than a u64
     let ring_size = tag.pubkeys.len();
+    if u64::try_from(ring_size).is_err() {
+        panic!("number of pubkeys must be less than 2^64");
+    }
+
     let aa1 = sig.aa1;
 
     // A₀ := H'(L, m)
     let aa0 = {
         let mut d = tag.hash1();
-        d.input(msg);
+        d.update(msg);
         RistrettoPoint::from_hash(d)
     };
 
@@ -78,7 +91,7 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
     let sigma: Vec<RistrettoPoint> = {
         let mut vals = Vec::new();
         for i in 0..ring_size {
-            let s = Scalar::from_u64((i+1) as u64);
+            let s = Scalar::from((i + 1) as u64);
             let aa1i = &s * &aa1;
             vals.push(&aa0 + &aa1i);
         }
@@ -95,27 +108,36 @@ pub(crate) fn compute_sigma(msg: &[u8], tag: &Tag, sig: &Signature)
 ///
 /// ```
 /// # fn main() {
-/// use fujisaki_ringsig::{sign, verify, KeyPair, Tag};
+/// use fujisaki_ringsig::{gen_keypair, sign, verify, Tag};
+/// # let mut rng = rand::thread_rng();
 ///
 /// let msg = b"ready for the chumps on the wall";
 /// let issue = b"testcase 12346".to_vec();
 ///
-/// let kp1 = KeyPair::generate();
-/// let kp2 = KeyPair::generate();
-/// let kp3 = KeyPair::generate();
+/// let (my_privkey, pubkey1) = gen_keypair(&mut rng);
+/// let (_, pubkey2) = gen_keypair(&mut rng);
+/// let (_, pubkey3) = gen_keypair(&mut rng);
 ///
-/// let my_privkey = kp1.privkey;
-/// let pubkeys = vec![kp1.pubkey, kp2.pubkey, kp3.pubkey];
+/// let pubkeys = vec![pubkey1, pubkey2, pubkey3];
 /// let tag = Tag {
 ///     issue,
 ///     pubkeys,
 /// };
 ///
-/// let sig = sign(&*msg, &tag, &my_privkey);
+/// let sig = sign(&mut rng, &*msg, &tag, &my_privkey);
 /// assert!(verify(&*msg, &tag, &sig));
 /// # }
-pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
+pub fn sign<R: RngCore + CryptoRng>(
+    rng: &mut R,
+    msg: &[u8],
+    tag: &Tag,
+    privkey: &PrivateKey,
+) -> Signature {
+    // Make sure the ring size isn't bigger than a u64
     let ring_size = tag.pubkeys.len();
+    if u64::try_from(ring_size).is_err() {
+        panic!("number of pubkeys must be less than 2^64");
+    }
 
     // TODO: This is not constant time
     let mut privkey_idx: Option<usize> = None;
@@ -134,7 +156,7 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
     // A₀ := H'(L, m)
     let aa0 = {
         let mut d = tag.hash1();
-        d.input(msg);
+        d.update(msg);
         RistrettoPoint::from_hash(d)
     };
 
@@ -144,14 +166,14 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
         // sigma is indexed by zero but the paper assumes it is indexed at 1. We can keep it
         // indexed at zero, but we have to calculate 1/(i+1) instead of 1/i, otherwise we might
         // divide by 0
-        let s = Scalar::from_u64((privkey_idx+1) as u64);
+        let s = Scalar::from((privkey_idx + 1) as u64);
         let sinv = s.invert();
         &sinv * &t
     };
 
     // σᵢ := A₀ * A₁^{i+1}. Same reasoning for the +1 applies here.
     for i in (0..ring_size).filter(|&j| j != privkey_idx) {
-        let s = Scalar::from_u64((i+1) as u64);
+        let s = Scalar::from((i + 1) as u64);
         let aa1i = &s * &aa1;
         sigma[i] = &aa0 + &aa1i;
     }
@@ -164,16 +186,15 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
     let mut a: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
     let mut b: Vec<RistrettoPoint> = vec![RistrettoPoint::identity(); ring_size];
 
-    let mut csprng = OsRng::new().expect("Could not instantiate CSPRNG");
-    let w = Scalar::random(&mut csprng);
+    let w = Scalar::random(rng);
 
     // aⱼ := wⱼG,  bⱼ := wⱼh
     a[privkey_idx] = &w * &RISTRETTO_BASEPOINT_POINT;
     b[privkey_idx] = &w * &h;
 
     for i in (0..ring_size).filter(|&j| j != privkey_idx) {
-        c[i] = Scalar::random(&mut csprng);
-        z[i] = Scalar::random(&mut csprng);
+        c[i] = Scalar::random(rng);
+        z[i] = Scalar::random(rng);
 
         // aᵢ := zᵢG * cᵢyᵢ,  bᵢ := zᵢh + cᵢσᵢ
         a[i] = {
@@ -193,16 +214,16 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
         let mut d = tag.hash2();
         let aa0c = aa0.compress();
         let aa1c = aa1.compress();
-        d.input(aa0c.as_bytes());
-        d.input(aa1c.as_bytes());
+        d.update(aa0c.as_bytes());
+        d.update(aa1c.as_bytes());
 
         for ai in a.iter() {
             let aic = ai.compress();
-            d.input(aic.as_bytes());
+            d.update(aic.as_bytes());
         }
         for bi in b.iter() {
             let bic = bi.compress();
-            d.input(bic.as_bytes());
+            d.update(bic.as_bytes());
         }
 
         Scalar::from_hash(d)
@@ -210,10 +231,11 @@ pub fn sign(msg: &[u8], tag: &Tag, privkey: &PrivateKey) -> Signature {
 
     // cⱼ := c - Σ_{i ≠ j} cᵢ
     c[privkey_idx] = {
-        let sum = c.iter()
-                   .enumerate()
-                   .filter(|&(i, _)| i != privkey_idx)
-                   .fold(Scalar::zero(), |acc, (_, v)| &acc + &v);
+        let sum = c
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != privkey_idx)
+            .fold(Scalar::zero(), |acc, (_, v)| &acc + v);
         &cc - &sum
     };
 
@@ -270,22 +292,22 @@ pub fn verify(msg: &[u8], tag: &Tag, sig: &Signature) -> bool {
         let mut d = tag.hash2();
         let aa0c = aa0.compress();
         let aa1c = aa1.compress();
-        d.input(aa0c.as_bytes());
-        d.input(aa1c.as_bytes());
+        d.update(aa0c.as_bytes());
+        d.update(aa1c.as_bytes());
 
         for ai in a.iter() {
             let aic = ai.compress();
-            d.input(aic.as_bytes());
+            d.update(aic.as_bytes());
         }
         for bi in b.iter() {
             let bic = bi.compress();
-            d.input(bic.as_bytes());
+            d.update(bic.as_bytes());
         }
 
         Scalar::from_hash(d)
     };
 
-    let sum = c.iter().fold(Scalar::zero(), |acc, v| &acc + &v);
+    let sum = c.iter().fold(Scalar::zero(), |acc, v| &acc + v);
 
     // c == Σcᵢ
     sum == cc
@@ -293,30 +315,44 @@ pub fn verify(msg: &[u8], tag: &Tag, sig: &Signature) -> bool {
 
 #[cfg(test)]
 mod test {
-    use key::KeyPair;
     use super::{sign, verify};
-    use test_utils::{remove_privkey, setup, Context};
+    use crate::{
+        key::gen_keypair,
+        test_utils::{rand_ctx, remove_rand_privkey, Context},
+    };
 
     use rand::{self, Rng};
 
     // Make sure that every signature verifies
     #[test]
     fn test_sig_correctness() {
-        let Context { msg, tag, mut keypairs } = setup(1);
-        let privkey = remove_privkey(&mut keypairs);
+        let mut rng = rand::thread_rng();
 
-        let sig = sign(&msg, &tag, &privkey);
+        let Context {
+            msg,
+            tag,
+            mut keypairs,
+        } = rand_ctx(&mut rng, 1);
+        let privkey = remove_rand_privkey(&mut rng, &mut keypairs);
+
+        let sig = sign(&mut rng, &msg, &tag, &privkey);
         assert!(verify(&msg, &tag, &sig));
     }
 
     // Make sure doing the same signature twice doesn't result in the same output
     #[test]
     fn test_sig_nondeterminism() {
-        let Context { msg, tag, mut keypairs } = setup(1);
-        let privkey = remove_privkey(&mut keypairs);
+        let mut rng = rand::thread_rng();
 
-        let sig1 = sign(&msg, &tag, &privkey);
-        let sig2 = sign(&msg, &tag, &privkey);
+        let Context {
+            msg,
+            tag,
+            mut keypairs,
+        } = rand_ctx(&mut rng, 1);
+        let privkey = remove_rand_privkey(&mut rng, &mut keypairs);
+
+        let sig1 = sign(&mut rng, &msg, &tag, &privkey);
+        let sig2 = sign(&mut rng, &msg, &tag, &privkey);
 
         assert!(sig1 != sig2);
     }
@@ -325,9 +361,14 @@ mod test {
     #[test]
     fn test_sig_msg_linkage() {
         let mut rng = rand::thread_rng();
-        let Context { msg, tag, mut keypairs } = setup(1);
-        let privkey = remove_privkey(&mut keypairs);
-        let sig = sign(&msg, &tag, &privkey);
+
+        let Context {
+            msg,
+            tag,
+            mut keypairs,
+        } = rand_ctx(&mut rng, 1);
+        let privkey = remove_rand_privkey(&mut rng, &mut keypairs);
+        let sig = sign(&mut rng, &msg, &tag, &privkey);
 
         // Check that changing a byte of the message invalidates the signature
         let mut bad_msg = msg.clone();
@@ -341,13 +382,18 @@ mod test {
     #[test]
     fn test_sig_tag_linkage() {
         let mut rng = rand::thread_rng();
-        let Context { msg, tag, mut keypairs } = setup(1);
-        let privkey = remove_privkey(&mut keypairs);
-        let sig = sign(&msg, &tag, &privkey);
+
+        let Context {
+            msg,
+            tag,
+            mut keypairs,
+        } = rand_ctx(&mut rng, 1);
+        let privkey = remove_rand_privkey(&mut rng, &mut keypairs);
+        let sig = sign(&mut rng, &msg, &tag, &privkey);
 
         // Check that changing a pubkey in the tag invalidates the signature
         let mut bad_tag = tag.clone();
-        let new_pubkey = KeyPair::generate().pubkey;
+        let (_, new_pubkey) = gen_keypair(&mut rng);
         let pubkey_idx = rng.gen_range(0, tag.pubkeys.len());
         bad_tag.pubkeys[pubkey_idx] = new_pubkey;
         assert!(!verify(&msg, &bad_tag, &sig));

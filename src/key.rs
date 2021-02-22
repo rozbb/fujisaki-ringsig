@@ -1,7 +1,9 @@
+use crate::prelude::Vec;
+
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
-use rand::OsRng;
+use rand::{CryptoRng, RngCore};
 
 /// A public key
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,7 +56,7 @@ impl PrivateKey {
         let scalar = {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(scalar_bytes);
-            Scalar(arr)
+            Scalar::from_canonical_bytes(arr)?
         };
         let pubkey_point = {
             let mut arr = [0u8; 32];
@@ -67,32 +69,23 @@ impl PrivateKey {
     }
 }
 
-/// A private and public keypair
-#[derive(Clone)]
-pub struct KeyPair {
-    pub pubkey: PublicKey,
-    pub privkey: PrivateKey,
-}
+/// Generates a secure random keypair
+pub fn gen_keypair<R: CryptoRng + RngCore>(mut rng: R) -> (PrivateKey, PublicKey) {
+    let s = Scalar::random(&mut rng);
+    let pubkey = PublicKey(&s * &RISTRETTO_BASEPOINT_POINT);
+    let privkey = PrivateKey(s, pubkey.0.clone());
 
-impl KeyPair {
-    /// Generate a secure random keypair
-    pub fn generate() -> KeyPair {
-        let mut csprng = OsRng::new().expect("Could not instantiate CSPRNG");
-        let s = Scalar::random(&mut csprng);
-        let pubkey = PublicKey(&s * &RISTRETTO_BASEPOINT_POINT);
-        let privkey = PrivateKey(s, pubkey.0.clone());
-
-        KeyPair { pubkey, privkey }
-    }
+    (privkey, pubkey)
 }
 
 #[cfg(test)]
 mod test {
-    use super::{KeyPair, PrivateKey, PublicKey};
+    use super::{gen_keypair, PrivateKey, PublicKey};
 
     #[test]
     fn test_key_serialization_correctness() {
-        let KeyPair { pubkey, privkey } = KeyPair::generate();
+        let mut rng = rand::thread_rng();
+        let (privkey, pubkey) = gen_keypair(&mut rng);
 
         let pubkey_bytes = pubkey.as_bytes();
         assert_eq!(PublicKey::from_bytes(&*pubkey_bytes), Some(pubkey));

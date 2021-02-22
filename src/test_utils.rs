@@ -1,18 +1,24 @@
-use sig::{Tag};
-use key::{KeyPair, PrivateKey, PublicKey};
-use rand::{self, Rng};
+use crate::{
+    key::{gen_keypair, PrivateKey, PublicKey},
+    prelude::*,
+    sig::Tag,
+};
+
+use rand::{self, CryptoRng, Rng, RngCore};
 
 // Testing context for convenience
 pub(crate) struct Context {
     pub msg: Vec<u8>,
     pub tag: Tag,
-    pub keypairs: Vec<KeyPair>,
+    pub keypairs: Vec<(PrivateKey, PublicKey)>,
 }
 
 // Construct a context for testing
-pub(crate) fn setup(min_ring_size: usize) -> Context {
+pub(crate) fn rand_ctx<R>(mut rng: R, min_ring_size: usize) -> Context
+where
+    R: Rng + CryptoRng + RngCore,
+{
     // Make a random issue number, random ring size, and random message to sign
-    let mut rng = rand::thread_rng();
     let msg_len = rng.gen_range(1, 50);
     let issue_len = rng.gen_range(1, 50);
     let mut msg = vec![0u8; msg_len];
@@ -26,27 +32,25 @@ pub(crate) fn setup(min_ring_size: usize) -> Context {
     // Make a bunch of keypairs
     let mut keypairs = Vec::new();
     for _ in 0..ring_size {
-        let kp = KeyPair::generate();
+        let kp = gen_keypair(&mut rng);
         keypairs.push(kp);
     }
 
     // Clone out just the pubkeys
-    let pubkeys: Vec<PublicKey> = keypairs.iter().map(|kp| kp.pubkey.clone()).collect();
+    let pubkeys: Vec<PublicKey> = keypairs.iter().map(|(_, pubkey)| pubkey.clone()).collect();
 
-    let tag = Tag {
-        pubkeys,
-        issue,
-    };
+    let tag = Tag { pubkeys, issue };
 
-    Context {
-        msg,
-        tag,
-        keypairs,
-    }
+    Context { msg, tag, keypairs }
 }
 
-pub(crate) fn remove_privkey(keypairs: &mut Vec<KeyPair>) -> PrivateKey {
-    let mut rng = rand::thread_rng();
+pub(crate) fn remove_rand_privkey<R>(
+    mut rng: R,
+    keypairs: &mut Vec<(PrivateKey, PublicKey)>,
+) -> PrivateKey
+where
+    R: Rng + CryptoRng,
+{
     let privkey_idx = rng.gen_range(0, keypairs.len());
-    keypairs.remove(privkey_idx).privkey
+    keypairs.remove(privkey_idx).0
 }
