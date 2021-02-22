@@ -46,7 +46,6 @@
 //-------- no_std stuff --------//
 
 #![no_std]
-#![cfg_attr(not(feature = "std"), feature(alloc))]
 
 #[cfg(feature = "std")]
 #[macro_use]
