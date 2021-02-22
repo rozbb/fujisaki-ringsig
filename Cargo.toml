@@ -20,7 +20,9 @@ blake2 = { version = "0.9", default-features = false }
 curve25519-dalek = { version = "3.0", default-features = false, features = ["u64_backend"] }
 digest = { version = "0.9", default-features = false }
 generic-array = "0.9"
+# This isn't the latest version of rand_core, but it's what Dalek is pinned to right now
 rand_core  = { version = "0.5", default-features = false }
 
 [dev-dependencies]
+# This isn't the latest version of rand, but it's the latest that uses rand_core v0.5
 rand = "0.7"
